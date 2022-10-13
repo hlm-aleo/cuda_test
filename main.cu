@@ -8,6 +8,8 @@
 #include "asm_cuda.h"
 #include "curand.h"
 
+#include "cxtimers.h"
+
 static const uint32_t WINDOW_SIZE = 128;
 // static const uint32_t BLST_WIDTH = 253;
 
@@ -65,7 +67,7 @@ int main(void)
 
 
 
-    int DATA_SIZE = 20000;
+    int DATA_SIZE = 200000;
 
     thrust::device_vector<blst_p1_affine> bases(DATA_SIZE);
     blst_p1_affine b1 = {
@@ -80,19 +82,23 @@ int main(void)
                     TO_LIMB_T(0xc63b05c06ca1493b), TO_LIMB_T(0x1ae3a4617c510ea)
             }
     };
+    printf("copying blst_p1_affine \n");
     for(int i=0; i< DATA_SIZE; i++){
         bases[i] = b1;
     }
+    printf("finished copy \n");
 
     limb_t scalar_datas[DATA_SIZE][4] ;
     for (int i = 0; i<DATA_SIZE; i++) {
-        for(int j=0; j<4; i++){
+        for(int j=0; j<4; j++){
             scalar_datas[i][j] = TO_LIMB_T(0x1a22d9f300f5138f);
         }
     }
+    printf("--start cuda malloc");
     blst_scalar *scalar_data;
     cudaMalloc(&scalar_data, sizeof(limb_t) * DATA_SIZE*4);
     cudaMemcpyAsync(scalar_data, scalar_datas, sizeof(limb_t) * 12, cudaMemcpyHostToDevice);
+    printf("finished malloc");
 
 
     uint32_t counts[]={1,2};
@@ -112,11 +118,13 @@ int main(void)
     thrust::device_vector<uint32_t> windows(window_count);
     for (int i=0; i<window_count-1; i++) windows[i]=253;
     windows[window_count-1]=DATA_SIZE-DATA_SIZE/WINDOW_SIZE*253;
-
-
+    printf("======\n");
+    cx::timer tim;
     msm6_pixel<<<window_count,253>>>(bucket.data().get(),bases.data().get(), scalar_data, windows.data().get(), window_count );
-    msm6_collapse_rows<<<2,3>>>(result.data().get(), bucket.data().get(),  window_count);
+    msm6_collapse_rows<<<1,253>>>(result.data().get(), bucket.data().get(),  window_count);
+    cudaDeviceSynchronize();
     // H and D are automatically deleted when the function returns
+    printf("===%X==time %f\n", result[0], tim.lap_ms());
     return 0;
 }
 
